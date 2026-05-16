@@ -80,6 +80,57 @@ header { text-align: center; margin-bottom: 24px; padding: 20px 0 12px; }
 }
 .handsfree-row .label { font-weight: 700; font-size: 14px; }
 .handsfree-row .desc { font-size: 11px; opacity: 0.9; margin-top: 2px; }
+
+.voice-selector {
+  background: white;
+  border: 2px solid var(--paper-deep);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.voice-selector-label {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+.voice-selector-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.voice-btn {
+  padding: 8px 14px;
+  font-family: 'Zen Maru Gothic', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  border: 2px solid var(--paper-deep);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.voice-btn:active { transform: translateY(1px); }
+.voice-btn.active {
+  background: var(--leaf);
+  color: white;
+  border-color: var(--leaf);
+}
+.voice-test-btn {
+  width: 100%;
+  padding: 8px;
+  font-family: 'Zen Maru Gothic', sans-serif;
+  font-size: 12px;
+  background: var(--paper);
+  border: 2px solid var(--paper-deep);
+  color: var(--ink);
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.voice-test-btn:active { transform: translateY(1px); }
 .switch {
   position: relative; width: 52px; height: 28px;
   background: rgba(255,255,255,0.3); border-radius: 14px;
@@ -342,6 +393,14 @@ footer a { color: var(--leaf); text-decoration: none; }
     <div class="switch" id="handsfreeSwitch"></div>
   </div>
 
+  <div class="voice-selector" id="voiceSelector">
+    <div class="voice-selector-label">🔊 読み上げの声</div>
+    <div class="voice-selector-buttons" id="voiceButtons">
+      <button class="voice-btn active" data-voice="auto">自動</button>
+    </div>
+    <button class="voice-test-btn" id="voiceTestBtn">▶️ こえを ためす</button>
+  </div>
+
   <div class="warn-box" id="voiceWarn" style="display:none">
     ⚠️ このブラウザは音声認識に対応していません。Safari か Chrome でひらいてください。
   </div>
@@ -540,9 +599,117 @@ let state = {
 const $ = id => document.getElementById(id);
 
 let voices = [];
+let selectedVoice = 'auto'; // 'auto' | voice URI
+
 function loadVoices() {
   voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('ja'));
+  renderVoiceButtons();
 }
+
+function renderVoiceButtons() {
+  const container = $('voiceButtons');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // 自動ボタン
+  const autoBtn = document.createElement('button');
+  autoBtn.className = 'voice-btn' + (selectedVoice === 'auto' ? ' active' : '');
+  autoBtn.dataset.voice = 'auto';
+  autoBtn.textContent = '自動';
+  autoBtn.onclick = () => selectVoice('auto');
+  container.appendChild(autoBtn);
+
+  // ボイスを分類
+  const categorized = categorizeVoices(voices);
+
+  // 女性
+  if (categorized.female.length > 0) {
+    const btn = document.createElement('button');
+    const v = categorized.female[0];
+    btn.className = 'voice-btn' + (selectedVoice === v.voiceURI ? ' active' : '');
+    btn.dataset.voice = v.voiceURI;
+    btn.textContent = '👩 女性';
+    btn.onclick = () => selectVoice(v.voiceURI);
+    container.appendChild(btn);
+  }
+
+  // 男性
+  if (categorized.male.length > 0) {
+    const btn = document.createElement('button');
+    const v = categorized.male[0];
+    btn.className = 'voice-btn' + (selectedVoice === v.voiceURI ? ' active' : '');
+    btn.dataset.voice = v.voiceURI;
+    btn.textContent = '👨 男性';
+    btn.onclick = () => selectVoice(v.voiceURI);
+    container.appendChild(btn);
+  }
+
+  // Siri系
+  categorized.siri.forEach((v, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'voice-btn' + (selectedVoice === v.voiceURI ? ' active' : '');
+    btn.dataset.voice = v.voiceURI;
+    // Siriボイスは名前から番号を取得しようと試みる
+    const match = v.name.match(/(\d+)/);
+    const label = match ? `Siri ${match[1]}` : `Siri ${i+1}`;
+    btn.textContent = '✨ ' + label;
+    btn.onclick = () => selectVoice(v.voiceURI);
+    container.appendChild(btn);
+  });
+
+  // その他（分類されなかったもの）
+  categorized.other.forEach((v, i) => {
+    if (i >= 2) return; // 多すぎる場合は2つまで
+    const btn = document.createElement('button');
+    btn.className = 'voice-btn' + (selectedVoice === v.voiceURI ? ' active' : '');
+    btn.dataset.voice = v.voiceURI;
+    btn.textContent = v.name.length > 10 ? v.name.substring(0, 8) + '…' : v.name;
+    btn.onclick = () => selectVoice(v.voiceURI);
+    container.appendChild(btn);
+  });
+}
+
+function categorizeVoices(voiceList) {
+  const result = { female: [], male: [], siri: [], other: [] };
+  voiceList.forEach(v => {
+    const name = v.name.toLowerCase();
+    if (name.includes('siri') || name.includes('o-ren')) {
+      result.siri.push(v);
+    } else if (name.includes('kyoko') || name.includes('女性') || name.includes('female') || name.includes('haruka')) {
+      result.female.push(v);
+    } else if (name.includes('otoya') || name.includes('男性') || name.includes('male') || name.includes('hattori') || name.includes('ichiro')) {
+      result.male.push(v);
+    } else {
+      result.other.push(v);
+    }
+  });
+  return result;
+}
+
+function selectVoice(voiceURI) {
+  selectedVoice = voiceURI;
+  // ボタンのactiveを更新
+  document.querySelectorAll('.voice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.voice === voiceURI);
+  });
+  // 設定を保存
+  try { localStorage.setItem('selectedVoice', voiceURI); } catch(e) {}
+}
+
+function getSelectedVoiceObject() {
+  if (selectedVoice === 'auto' || !selectedVoice) {
+    return voices.length > 0 ? voices[0] : null;
+  }
+  const v = voices.find(v => v.voiceURI === selectedVoice);
+  return v || (voices.length > 0 ? voices[0] : null);
+}
+
+// 起動時に保存された選択を復元
+try {
+  const saved = localStorage.getItem('selectedVoice');
+  if (saved) selectedVoice = saved;
+} catch(e) {}
+
 if ('speechSynthesis' in window) {
   loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
@@ -559,7 +726,10 @@ function speak(text, onEnd) {
   u.lang = 'ja-JP';
   u.rate = 1.05;
   u.pitch = 1.0;
-  if (voices.length > 0) u.voice = voices[0];
+  if (voices.length > 0) {
+    const v = getSelectedVoiceObject();
+    if (v) u.voice = v;
+  }
   u.onend = () => {
     $('speakerBtn').classList.remove('playing');
     currentUtterance = null;
@@ -791,6 +961,10 @@ $('handsfreeRow').addEventListener('click', () => {
   $('handsfreeSwitch').classList.toggle('on', state.handsfree);
 });
 
+$('voiceTestBtn').addEventListener('click', () => {
+  speak('こんにちは。これは、こえの サンプル です。');
+});
+
 if (!SpeechRec) {
   $('voiceWarn').style.display = 'block';
   $('handsfreeRow').style.opacity = '0.5';
@@ -866,16 +1040,51 @@ function shuffle(arr) {
 
 function getQuestionTextForSpeech(q) {
   if (q.type === 'family') {
-    return `${q.prompt} は、なに科 でしょう。`;
+    return `${q.prompt}は、なに科でしょう？`;
   } else if (q.type === 'feature') {
-    let text = 'つぎの 特徴 の しょくぶつ、または、いきもの は なに？　';
-    text += q.prompt.join('。 ');
-    text += `。 大きさは、${q.sizeHint}。`;
-    return text;
+    let text = 'ヒントを言います。 ';
+    // 特徴の文末の句点を除去して、読みやすく
+    const features = q.prompt.map(f => f.replace(/。$/, '').trim());
+    text += features.join('、 ');
+    text += `、 大きさは ${q.sizeHint}。 これは何でしょう？`;
+    return normalizeForSpeech(text);
   } else if (q.type === 'classify') {
-    return `${q.prompt} の ぶんるい は、つぎの どれ？　被子植物、シダ植物、コケ植物、鳥、昆虫、甲殻類、環形動物、軟体動物。`;
+    return `${q.prompt}は、どのなかまでしょう？ 選択肢は、 ひししょくぶつ、 シダしょくぶつ、 コケしょくぶつ、 鳥、 こんちゅう、 こうかくるい、 かんけいどうぶつ、 なんたいどうぶつ。`;
   }
   return '';
+}
+
+// 読み上げ用テキスト正規化（漢字の読み間違いを補正）
+function normalizeForSpeech(text) {
+  return text
+    .replace(/花弁/g, 'かべん')
+    .replace(/雌株/g, 'めかぶ')
+    .replace(/雄株/g, 'おかぶ')
+    .replace(/輪生/g, 'りんせい')
+    .replace(/唇形/g, 'しんけい')
+    .replace(/田畑/g, 'たはた')
+    .replace(/道ばた/g, 'みちばた')
+    .replace(/葉/g, 'は')
+    .replace(/茎/g, 'くき')
+    .replace(/巣/g, 'す')
+    .replace(/蜜/g, 'みつ')
+    .replace(/餌/g, 'えさ')
+    .replace(/殻/g, 'から')
+    .replace(/外敵/g, 'がいてき')
+    .replace(/雑食性/g, 'ざっしょくせい')
+    .replace(/種子/g, 'たね')
+    .replace(/昆虫/g, 'こんちゅう')
+    .replace(/市街地/g, 'しがいち')
+    .replace(/生息/g, 'せいそく')
+    .replace(/枯れ草/g, 'かれくさ')
+    .replace(/唾液/g, 'だえき')
+    .replace(/子育て/g, 'こそだて')
+    .replace(/空洞/g, 'くうどう')
+    .replace(/集団生活/g, 'しゅうだんせいかつ')
+    .replace(/食物/g, 'たべもの')
+    .replace(/落ち葉/g, 'おちば')
+    .replace(/被害/g, 'ひがい')
+    .replace(/農作物/g, 'のうさくぶつ');
 }
 
 function renderQuestion() {
@@ -1007,9 +1216,11 @@ function judgeAnswer(isCorrect, userRaw, skipped) {
 
   if (state.handsfree) {
     const isLast = state.currentIdx === state.questions.length-1;
+    // 答えの読み上げ用テキスト
+    const answerForSpeech = normalizeForSpeech(q.answer);
     const feedbackText = isCorrect
       ? `せいかい！`
-      : (skipped ? `答えは、${q.answer}。` : `ざんねん。答えは、${q.answer}。`);
+      : (skipped ? `答えは、${answerForSpeech}。` : `ざんねん。答えは、${answerForSpeech}。`);
     speak(feedbackText, () => {
       if (state.paused) return;
       $('autoNextInfo').style.display = 'block';
@@ -1071,7 +1282,7 @@ function showResult() {
 
   if (state.handsfree) {
     setTimeout(() => {
-      speak(`${title}　${total}もん中、${score}もん せいかい！　せいかいりつ ${pct}パーセント。`);
+      speak(`${title} ${total}問中、${score}問せいかい。 せいかい率 ${pct}パーセント。`);
     }, 300);
   }
 
